@@ -32,6 +32,7 @@ else:
 
 # Authoriazation token for API calls
 api_call_headers = {'Authorization': 'token 3b86cf789b6e20d8ab5066256885137fed57a0537a834123ce9a8934c1fa6cd5f53798e27da28738053a754317e84b26fe78c8324a3b40598b0090ae5f0a1ac3'} 
+# You may use your own token, just change the value of the dict
 # example: {'Authorization': 'token dkd8rskjdkfiwi49hgkw...'}
 
 # Or use this test set of ids that have small files (To use, delete the '#' in the next line)
