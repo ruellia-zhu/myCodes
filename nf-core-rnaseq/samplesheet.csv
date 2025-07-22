@@ -1,0 +1,12 @@
+sample,fastq_1,fastq_2,strandedness
+leaf,/media/desk16/tl5024/RNAseq/ERR15075318/ERR15075318_1.fastq.gz,/media/desk16/tl5024/RNAseq/ERR15075318/ERR15075318_2.fastq.gz,auto
+stem,/media/desk16/tl5024/RNAseq/ERR15076288/ERR15076288_1.fastq.gz,/media/desk16/tl5024/RNAseq/ERR15076288/ERR15076288_2.fastq.gz,auto
+bulb,/media/desk16/tl5024/RNAseq/ERR15076289/ERR15076289_1.fastq.gz,/media/desk16/tl5024/RNAseq/ERR15076289/ERR15076289_2.fastq.gz,auto
+flower,/media/desk16/tl5024/RNAseq/ERR15076290/ERR15076290_1.fastq.gz,/media/desk16/tl5024/RNAseq/ERR15076290/ERR15076290_2.fastq.gz,auto
+root-6dpi,/media/desk16/tl5024/RNAseq/SRR28536713/SRR28536713_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR28536713/SRR28536713_2.fastq.gz,auto
+root-4dpi,/media/desk16/tl5024/RNAseq/SRR28536714/SRR28536714_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR28536714/SRR28536714_2.fastq.gz,auto
+root-2dpi,/media/desk16/tl5024/RNAseq/SRR28536715/SRR28536715_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR28536715/SRR28536715_2.fastq.gz,auto
+root-CK,/media/desk16/tl5024/RNAseq/SRR28536716/SRR28536716_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR28536716/SRR28536716_2.fastq.gz,auto
+leaf-CK,/media/desk16/tl5024/RNAseq/SRR7031451/SRR7031451_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR7031451/SRR7031451_2.fastq.gz,auto
+leaf-Be4h,/media/desk16/tl5024/RNAseq/SRR7031452/SRR7031452_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR7031452/SRR7031452_2.fastq.gz,auto
+leaf-Be24h,/media/desk16/tl5024/RNAseq/SRR7031454/SRR7031454_1.fastq.gz,/media/desk16/tl5024/RNAseq/SRR7031454/SRR7031454_2.fastq.gz,auto
