@@ -1,0 +1,278 @@
+#!/bin/bash
+
+# 欢迎界面
+echo "============================================================"
+echo "fastp 批量质控分析软件 v1.0 2025.8.31"
+echo "作者：朱云涛（北京林业大学）"
+echo "------------------------------------------------------------"
+echo "用法：sh $0 <INDIR> [THREADS]"
+echo "INDIR: 包含多个样品子文件夹的目录，每个子文件夹内包含成对的测序文件*.fq.gz/*.fastq.gz"
+echo "       INDIR一般为存放Rawdata的目录"
+echo "THREADS: 可选参数，指定线程数，默认为8，太高了也并不会显著增加并行（有I/O瓶颈），可以不改"
+echo "用例：sh $0 /RNA-seq/30个兰州百合转录组/rawdata 16"
+echo "------------------------------------------------------------"
+echo "功能："
+echo "1、自动识别fq.gz和fastq.gz格式的测序文件"
+echo "2、生成MultiQC质量控制报告"
+echo "3、生成详细的分析摘要报告"
+echo "4、自动跳过结果目录，避免重复处理"
+echo "------------------------------------------------------------"
+echo "其他说明："
+echo "1、结果将保存到与INDIR同级的cleandata和fastp_result目录下"
+echo "   例如：输入/RNA-seq/rawdata，输出/RNA-seq/cleandata和/RNA-seq/fastp_result"
+echo "   cleandata目录下每个样品有独立的子文件夹存放质控后的数据"
+echo "2、使用前请确保已经切换到RNA-seq或其他配置好的conda环境"
+echo "3、线程数可通过第二个参数自定义，默认为8"
+
+# 判断参数个数
+if [ $# -lt 1 ]; then
+  echo "参数数量不对！"
+  echo "用法: sh $0 <INDIR> [THREADS]"
+  echo "INDIR: 包含多个样品子文件夹的目录，每个子文件夹内包含成对的测序文件*.fq.gz/*.fastq.gz"
+  echo "THREADS: 可选参数，指定线程数，默认为8"
+  exit 1
+fi
+
+INDIR=$1
+THREADS=${2:-8}
+
+# 检查输入目录是否存在
+if [ ! -d "$INDIR" ]; then
+  echo "错误：输入目录不存在！($INDIR)"
+  exit 1
+fi
+
+# 获取输入目录的父目录
+PARENT_DIR=$(dirname "$INDIR")
+
+# 输出目录设置为与输入目录同级
+DATA_DIR="$PARENT_DIR/cleandata"
+OUTDIR="$PARENT_DIR/fastp_result"
+mkdir -p "$OUTDIR"
+mkdir -p "$DATA_DIR"
+
+# 创建MultiQC目录
+MULTIQC_DIR="$OUTDIR/multiQC"
+mkdir -p "$MULTIQC_DIR"
+
+# 验证线程数是否为有效数字
+if ! echo "$THREADS" | grep -q '^[0-9][0-9]*$' || [ "$THREADS" -le 0 ]; then
+  echo "警告: 线程数 '$THREADS' 无效，使用默认值8"
+  THREADS=8
+fi
+
+# 初始化样品信息记录
+SAMPLE_INFO="$MULTIQC_DIR/sample_info.txt"
+printf "序号\t样品名称\tRead1路径\tRead2路径\t分析状态\n" > "$SAMPLE_INFO"
+
+# 获取fastp版本信息
+FASTP_VERSION=$(fastp --version 2>&1 | head -n 1 || echo "未知版本")
+
+# 生成分析命令
+COMMAND_USED="fastp -i fastq_1 -I fastq_2 -o output_1 -O output_2 --detect_adapter_for_pe --trim_poly_x --poly_x_min_len 10 --n_base_limit 15 -q 20 -u 50 --html html_report --json json_report -w $THREADS"
+
+echo "已经创建好结果目录，分析即将开始......"
+echo "输入目录: $INDIR"
+echo "fastp结果目录: $OUTDIR"
+echo "cleandata存放目录: $DATA_DIR"
+echo "multiQC报告目录: $MULTIQC_DIR"
+echo "使用线程数: $THREADS"
+echo "fastp版本: $FASTP_VERSION"
+echo "------------------------------------------------------------"
+
+# 遍历输入目录下的样品文件夹
+sample_count=0
+success_count=0
+for sample in "$INDIR"/*; do
+  if [ -d "$sample" ]; then
+    name=$(basename "$sample")
+    
+    # 跳过结果目录
+    case "$name" in
+      kallisto*|fastp*|cleandata)
+        echo "跳过结果目录: $name"
+        continue
+        ;;
+    esac
+    
+    sample_count=$((sample_count + 1))
+    
+    # 尝试找到配对的测序文件（支持fq.gz和fastq.gz）
+    fq1=""
+    fq2=""
+    
+    # 优先查找_R1和_R2格式（最常见）
+    fq1_candidates=$(ls "$sample"/*_R1*.f*q.gz 2>/dev/null)
+    fq2_candidates=$(ls "$sample"/*_R2*.f*q.gz 2>/dev/null)
+    
+    # 如果没有找到_R1/_R2，则查找_1/_2格式
+    if [ -z "$fq1_candidates" ] || [ -z "$fq2_candidates" ]; then
+      fq1_candidates=$(ls "$sample"/*_1.fq.gz 2>/dev/null)
+      fq2_candidates=$(ls "$sample"/*_2.fq.gz 2>/dev/null)
+    fi
+    
+    # 如果还没找到fq.gz，则查找fastq.gz格式
+    if [ -z "$fq1_candidates" ] || [ -z "$fq2_candidates" ]; then
+      fq1_candidates=$(ls "$sample"/*_1.fastq.gz 2>/dev/null)
+      fq2_candidates=$(ls "$sample"/*_2.fastq.gz 2>/dev/null)
+    fi
+    
+    # 取第一个匹配的文件（安全处理含空格的路径）
+    if [ -n "$fq1_candidates" ]; then
+      fq1=$(echo "$fq1_candidates" | head -n1)
+    else
+      fq1=""
+    fi
+    
+    if [ -n "$fq2_candidates" ]; then
+      fq2=$(echo "$fq2_candidates" | head -n1)
+    else
+      fq2=""
+    fi
+    
+    if [ -n "$fq1" ] && [ -n "$fq2" ] && [ -f "$fq1" ] && [ -f "$fq2" ]; then
+      echo "正在处理样品 $name ..."
+      echo "  Read1: $fq1"
+      echo "  Read2: $fq2"
+      
+      # 为每个样品创建独立的cleandata子目录
+      SAMPLE_CLEAN_DIR="$DATA_DIR/$name"
+      mkdir -p "$SAMPLE_CLEAN_DIR"
+      
+      # 运行fastp
+      if fastp -i "$fq1" -I "$fq2" -o "$SAMPLE_CLEAN_DIR/${name}_1.fq.gz" -O "$SAMPLE_CLEAN_DIR/${name}_2.fq.gz" \
+               --detect_adapter_for_pe --trim_poly_x --poly_x_min_len 10 --n_base_limit 15 \
+               -q 20 -u 50 --html "$OUTDIR/${name}_fastp.html" --json "$OUTDIR/${name}_fastp.json" -w "$THREADS"; then
+        printf "%s\t%s\t%s\t%s\t成功\n" "$sample_count" "$name" "$fq1" "$fq2" >> "$SAMPLE_INFO"
+        success_count=$((success_count + 1))
+        echo "样品 $name 分析完成"
+      else
+        printf "%s\t%s\t%s\t%s\t失败\n" "$sample_count" "$name" "$fq1" "$fq2" >> "$SAMPLE_INFO"
+        echo "警告: 样品 $name 分析失败"
+      fi
+    else
+      echo "警告: 样品 $name 缺少配对的测序文件，跳过"
+      printf "%s\t%s\t未找到\t未找到\t跳过\n" "$sample_count" "$name" >> "$SAMPLE_INFO"
+    fi
+  fi
+done
+
+echo "============================================================"
+echo "fastp质控分析完成！"
+echo "总样品数: $sample_count"
+echo "成功分析: $success_count"
+echo "正在生成汇总报告..."
+
+# 生成分析摘要
+echo "正在生成分析摘要..."
+cat > "$MULTIQC_DIR/summary.md" << EOF
+# fastp RNA-Seq 批量质控分析v1.0摘要报告
+
+by 朱云涛 at $(date)
+欢迎访问[我的博客](https://yuntaobioinformatics.wordpress.com/)
+Welcome to visit [My Blog](https://yuntaobioinformatics.wordpress.com/)
+
+## 1 分析基本信息
+
+- **fastp版本**: $FASTP_VERSION
+- **完成时间**: $(date)
+- **分析命令**: \`$COMMAND_USED\`
+- **输入目录**: $INDIR
+- **cleandata目录**: $DATA_DIR
+- **结果目录**: $OUTDIR
+
+## 2 分析样品统计
+
+- **总样品数**: $sample_count
+- **成功分析**: $success_count
+- **失败样品**: $((sample_count - success_count))
+
+## 3 分析结果详情
+
+EOF
+
+# 添加样品信息表格到摘要
+echo "| 序号 | 样品名称 | Read1路径 | Read2路径 | 分析状态 |" >> "$MULTIQC_DIR/summary.md"
+echo "|------|----------|-----------|-----------|----------|" >> "$MULTIQC_DIR/summary.md"
+# 使用sed处理制表符分隔的文件
+tail -n +2 "$SAMPLE_INFO" | sed 's/\t/ | /g' | sed 's/^/| /' | sed 's/$/ |/' >> "$MULTIQC_DIR/summary.md"
+
+# 添加fastp统计信息
+echo "" >> "$MULTIQC_DIR/summary.md"
+echo "## fastp质控统计" >> "$MULTIQC_DIR/summary.md"
+echo "" >> "$MULTIQC_DIR/summary.md"
+echo "| 样品名称 | 输入reads数 | 输出reads数 | 过滤率(%) | Q20(%) | Q30(%) |" >> "$MULTIQC_DIR/summary.md"
+echo "|----------|-------------|-------------|-----------|--------|--------|" >> "$MULTIQC_DIR/summary.md"
+
+# 从每个样品的fastp.json提取统计信息
+for sample in "$INDIR"/*; do
+  if [ -d "$sample" ]; then
+    name=$(basename "$sample")
+    # 跳过结果目录
+    case "$name" in
+      kallisto*|fastp*|cleandata)
+        continue
+        ;;
+    esac
+    
+    fastp_json="$OUTDIR/${name}_fastp.json"
+    if [ -f "$fastp_json" ]; then
+      # 使用python解析JSON
+      export fastp_json
+      export name
+      python3 - << 'PYTHON_EOF' >> "$MULTIQC_DIR/summary.md"
+import json
+import os
+
+fastp_json_file = os.environ.get('fastp_json')
+sample_name = os.environ.get('name')
+
+try:
+    with open(fastp_json_file, 'r') as f:
+        data = json.load(f)
+    
+    # 提取统计信息
+    before_filtering = data.get('summary', {}).get('before_filtering', {})
+    after_filtering = data.get('summary', {}).get('after_filtering', {})
+    
+    total_reads_before = before_filtering.get('total_reads', 0)
+    total_reads_after = after_filtering.get('total_reads', 0)
+    q20_rate_after = after_filtering.get('q20_rate', 0) * 100
+    q30_rate_after = after_filtering.get('q30_rate', 0) * 100
+    
+    if total_reads_before > 0:
+        filter_rate = ((total_reads_before - total_reads_after) / total_reads_before) * 100
+    else:
+        filter_rate = 0
+    
+    print(f"| {sample_name} | {total_reads_before:,} | {total_reads_after:,} | {filter_rate:.2f} | {q20_rate_after:.2f} | {q30_rate_after:.2f} |")
+    
+except Exception as e:
+    print(f"| {sample_name} | - | - | - | - | - |")
+PYTHON_EOF
+    fi
+  fi
+done
+
+# 运行MultiQC生成报告
+echo "正在运行MultiQC生成质量控制报告..."
+# 确保MultiQC目录存在
+mkdir -p "$MULTIQC_DIR"
+# 在fastp结果目录中运行MultiQC，但指定绝对路径输出
+if command -v multiqc >/dev/null 2>&1; then
+  multiqc "$OUTDIR" -o "$MULTIQC_DIR" --title "fastp RNA-Seq Quality Control Report" --comment "Generated by fastp批量质控分析软件 v1.0" --force
+  echo "MultiQC报告已生成到: $MULTIQC_DIR"
+else
+  echo "警告: MultiQC未安装，跳过质量控制报告生成"
+  echo "可以使用以下命令安装: conda install -c bioconda multiqc"
+  echo "你是不是忘记切换conda环境了？conda activate RNAseq"
+fi
+
+echo "============================================================"
+echo "所有分析完成！"
+echo "结果目录: $OUTDIR"
+echo "Cleandata存放目录: $DATA_DIR"
+echo "汇总报告: $MULTIQC_DIR"
+echo "- 分析摘要: $MULTIQC_DIR/summary.md"
+echo "- MultiQC报告: $MULTIQC_DIR/multiqc_report.html"
+echo "============================================================"
